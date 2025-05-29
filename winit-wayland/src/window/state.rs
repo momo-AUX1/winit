@@ -32,12 +32,15 @@ use wayland_protocols::xdg::toplevel_icon::v1::client::xdg_toplevel_icon_manager
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 use winit_core::cursor::{CursorIcon, CustomCursor as CoreCustomCursor};
 use winit_core::error::{NotSupportedError, RequestError};
-use winit_core::window::{CursorGrabMode, ImePurpose, ResizeDirection, Theme, WindowId};
+use winit_core::window::{
+    CursorGrabMode, ImeCapabilities, ImeRequest, ImeRequestError, ResizeDirection, Theme, WindowId,
+};
 
 use crate::event_loop::OwnedDisplayHandle;
 use crate::logical_to_physical_rounded;
 use crate::seat::{
-    PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
+    PointerConstraintsState, TextInputClientState, WinitPointerData, WinitPointerDataExt,
+    ZwpTextInputV3Ext,
 };
 use crate::state::{WindowCompositorUpdate, WinitState};
 use crate::types::cursor::{CustomCursor, SelectedCursor, WaylandCustomCursor};
@@ -113,11 +116,14 @@ pub struct WindowState {
     /// The current cursor grabbing mode.
     cursor_grab_mode: GrabState,
 
-    /// Whether the IME input is allowed for that window.
-    ime_allowed: bool,
+    /// IME capabilities requested by the client.
+    ime_capabilities: Option<ImeCapabilities>,
 
-    /// The current IME purpose.
-    ime_purpose: ImePurpose,
+    /// The input method properties provided by the application to the IME.
+    ///
+    /// This state is cached here so that the window can automatically send the state to the IME as
+    /// soon as it becomes available without application involvement.
+    text_input_state: TextInputClientState,
 
     /// The text inputs observed on the window.
     text_inputs: Vec<ZwpTextInputV3>,
@@ -196,6 +202,7 @@ impl WindowState {
 
         Self {
             toplevel_icon: None,
+            ime_capabilities: None,
             xdg_toplevel_icon_manager,
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
@@ -211,8 +218,7 @@ impl WindowState {
             frame_callback_state: FrameCallbackState::None,
             seat_focus: Default::default(),
             has_pending_move: None,
-            ime_allowed: false,
-            ime_purpose: ImePurpose::Normal,
+            text_input_state: Default::default(),
             last_configure: None,
             max_surface_size: None,
             min_surface_size: MIN_WINDOW_SIZE,
@@ -544,8 +550,8 @@ impl WindowState {
 
     /// Whether the IME is allowed.
     #[inline]
-    pub fn ime_allowed(&self) -> bool {
-        self.ime_allowed
+    pub fn ime_allowed(&self) -> Option<ImeCapabilities> {
+        self.ime_capabilities
     }
 
     /// Get the size of the window.
@@ -983,51 +989,61 @@ impl WindowState {
         self.seat_focus.remove(seat);
     }
 
-    /// Returns `true` if the requested state was applied.
-    pub fn set_ime_allowed(&mut self, allowed: bool) -> bool {
-        self.ime_allowed = allowed;
+    /// Get the requested IME state
+    pub(crate) fn text_input_state(&self) -> &TextInputClientState {
+        &self.text_input_state
+    }
 
-        let mut applied = false;
+    /// Atomically update input method state.
+    ///
+    /// Returns `None` if an input method state haven't changed. Alternatively `Some(true)` and
+    /// `Some(false)` is returned respectfully.
+    pub fn request_ime_update(
+        &mut self,
+        request: ImeRequest,
+    ) -> Result<Option<bool>, ImeRequestError> {
+        let (capabilities, request_data, send_enable) = match request {
+            ImeRequest::Enable(capabilities, request_data) => {
+                if self.ime_capabilities.is_some() {
+                    return Err(ImeRequestError::AlreadyEnabled);
+                }
+
+                self.ime_capabilities = Some(capabilities);
+                (capabilities, request_data, true)
+            },
+            ImeRequest::Update(request_data) => {
+                if let Some(capabilities) = self.ime_capabilities {
+                    (capabilities, request_data, false)
+                } else {
+                    return Err(ImeRequestError::NotEnabled);
+                }
+            },
+            ImeRequest::Disable => {
+                self.ime_capabilities = None;
+                for text_input in &self.text_inputs {
+                    text_input.disable();
+                }
+
+                return Ok(Some(false));
+            },
+        };
+
+        // Only one input method may be active per (seat, surface),
+        // but there may be multiple seats focused on a surface,
+        // resulting in multiple text input objects.
+        //
+        // WARNING: this doesn't actually handle different seats with independent cursors. There's
+        // no API to set a per-seat input method state, so they all share a single state.
+        self.text_input_state.update(capabilities, request_data, self.scale_factor());
         for text_input in &self.text_inputs {
-            applied = true;
-            if allowed {
-                text_input.enable();
-                text_input.set_content_type_by_purpose(self.ime_purpose);
-            } else {
-                text_input.disable();
-            }
-            text_input.commit();
+            text_input.set_state(capabilities, &self.text_input_state, send_enable);
         }
 
-        applied
-    }
-
-    /// Set the IME position.
-    pub fn set_ime_cursor_area(&self, position: LogicalPosition<u32>, size: LogicalSize<u32>) {
-        // FIXME: This won't fly unless user will have a way to request IME window per seat, since
-        // the ime windows will be overlapping, but winit doesn't expose API to specify for
-        // which seat we're setting IME position.
-        let (x, y) = (position.x as i32, position.y as i32);
-        let (width, height) = (size.width as i32, size.height as i32);
-        for text_input in self.text_inputs.iter() {
-            text_input.set_cursor_rectangle(x, y, width, height);
-            text_input.commit();
+        if send_enable {
+            Ok(Some(true))
+        } else {
+            Ok(None)
         }
-    }
-
-    /// Set the IME purpose.
-    pub fn set_ime_purpose(&mut self, purpose: ImePurpose) {
-        self.ime_purpose = purpose;
-
-        for text_input in &self.text_inputs {
-            text_input.set_content_type_by_purpose(purpose);
-            text_input.commit();
-        }
-    }
-
-    /// Get the IME purpose.
-    pub fn ime_purpose(&self) -> ImePurpose {
-        self.ime_purpose
     }
 
     /// Set the scale factor for the given window.
