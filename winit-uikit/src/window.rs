@@ -386,7 +386,8 @@ impl Inner {
     fn request_ime_update(&self, request: ImeRequest) -> Result<(), ImeRequestError> {
         let mut current_caps = self.ime_capabilities.lock().unwrap();
         match request {
-            ImeRequest::Enable(capabilities, ..) => {
+            ImeRequest::Enable(enable) => {
+                let (capabilities, _) = enable.into_raw();
                 if current_caps.is_some() {
                     return Err(ImeRequestError::AlreadyEnabled);
                 }

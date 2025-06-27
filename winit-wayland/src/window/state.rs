@@ -116,14 +116,11 @@ pub struct WindowState {
     /// The current cursor grabbing mode.
     cursor_grab_mode: GrabState,
 
-    /// IME capabilities requested by the client.
-    ime_capabilities: Option<ImeCapabilities>,
-
     /// The input method properties provided by the application to the IME.
     ///
     /// This state is cached here so that the window can automatically send the state to the IME as
     /// soon as it becomes available without application involvement.
-    text_input_state: TextInputClientState,
+    text_input_state: Option<TextInputClientState>,
 
     /// The text inputs observed on the window.
     text_inputs: Vec<ZwpTextInputV3>,
@@ -202,7 +199,6 @@ impl WindowState {
 
         Self {
             toplevel_icon: None,
-            ime_capabilities: None,
             xdg_toplevel_icon_manager,
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
@@ -218,7 +214,7 @@ impl WindowState {
             frame_callback_state: FrameCallbackState::None,
             seat_focus: Default::default(),
             has_pending_move: None,
-            text_input_state: Default::default(),
+            text_input_state: None,
             last_configure: None,
             max_surface_size: None,
             min_surface_size: MIN_WINDOW_SIZE,
@@ -551,7 +547,11 @@ impl WindowState {
     /// Whether the IME is allowed.
     #[inline]
     pub fn ime_allowed(&self) -> Option<ImeCapabilities> {
-        self.ime_capabilities
+        self.text_input_state.as_ref().map(|state| state.capabilities())
+    }
+
+    pub(crate) fn text_input_state(&self) -> Option<&TextInputClientState> {
+        self.text_input_state.as_ref()
     }
 
     /// Get the size of the window.
@@ -989,11 +989,6 @@ impl WindowState {
         self.seat_focus.remove(seat);
     }
 
-    /// Get the requested IME state
-    pub(crate) fn text_input_state(&self) -> &TextInputClientState {
-        &self.text_input_state
-    }
-
     /// Atomically update input method state.
     ///
     /// Returns `None` if an input method state haven't changed. Alternatively `Some(true)` and
@@ -1002,29 +997,33 @@ impl WindowState {
         &mut self,
         request: ImeRequest,
     ) -> Result<Option<bool>, ImeRequestError> {
-        let (capabilities, request_data, send_enable) = match request {
-            ImeRequest::Enable(capabilities, request_data) => {
-                if self.ime_capabilities.is_some() {
+        let state_change = match request {
+            ImeRequest::Enable(enable) => {
+                let (capabilities, request_data) = enable.into_raw();
+
+                if self.text_input_state.is_some() {
                     return Err(ImeRequestError::AlreadyEnabled);
                 }
 
-                self.ime_capabilities = Some(capabilities);
-                (capabilities, request_data, true)
+                self.text_input_state = Some(TextInputClientState::new(
+                    capabilities,
+                    request_data,
+                    self.scale_factor(),
+                ));
+                true
             },
             ImeRequest::Update(request_data) => {
-                if let Some(capabilities) = self.ime_capabilities {
-                    (capabilities, request_data, false)
+                let scale_factor = self.scale_factor();
+                if let Some(text_input_state) = self.text_input_state.as_mut() {
+                    text_input_state.update(request_data, scale_factor);
                 } else {
                     return Err(ImeRequestError::NotEnabled);
                 }
+                false
             },
             ImeRequest::Disable => {
-                self.ime_capabilities = None;
-                for text_input in &self.text_inputs {
-                    text_input.disable();
-                }
-
-                return Ok(Some(false));
+                self.text_input_state = None;
+                true
             },
         };
 
@@ -1034,13 +1033,12 @@ impl WindowState {
         //
         // WARNING: this doesn't actually handle different seats with independent cursors. There's
         // no API to set a per-seat input method state, so they all share a single state.
-        self.text_input_state.update(capabilities, request_data, self.scale_factor());
         for text_input in &self.text_inputs {
-            text_input.set_state(capabilities, &self.text_input_state, send_enable);
+            text_input.set_state(self.text_input_state.as_ref(), state_change);
         }
 
-        if send_enable {
-            Ok(Some(true))
+        if state_change {
+            Ok(Some(self.text_input_state.is_some()))
         } else {
             Ok(None)
         }

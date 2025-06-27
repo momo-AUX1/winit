@@ -2,7 +2,9 @@
 use std::fmt;
 
 use cursor_icon::CursorIcon;
-use dpi::{PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size};
+use dpi::{
+    LogicalPosition, LogicalSize, PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -1134,16 +1136,19 @@ pub trait Window: AsAny + Send + Sync + fmt::Debug {
     #[deprecated = "use Window::request_ime_update instead"]
     fn set_ime_allowed(&self, allowed: bool) {
         let action = if allowed {
-            let new_state = ImeRequestData {
+            let position = LogicalPosition::new(0, 0);
+            let size = LogicalSize::new(0, 0);
+            let ime_caps = ImeCapabilities::CURSOR_AREA | ImeCapabilities::PURPOSE;
+            let request_data = ImeRequestData {
                 purpose: Some(ImePurpose::Normal),
                 // WARNING: there's nothing sensible to use here by default. This turns off the
                 // cursor_area capability on Wayland, breaking cursor_area support.
-                cursor_area: None,
+                cursor_area: Some((position.into(), size.into())),
                 ..ImeRequestData::default()
             };
 
             // Enable all capabilities to reflect the old behavior.
-            ImeRequest::Enable(ImeCapabilities::all(), new_state)
+            ImeRequest::Enable(ImeEnableRequest::new(ime_caps, request_data).unwrap())
         } else {
             ImeRequest::Disable
         };
@@ -1172,7 +1177,7 @@ pub trait Window: AsAny + Send + Sync + fmt::Debug {
 
     /// Atomically apply request to IME.
     ///
-    /// For details consult [`ImeRequest`].
+    /// For details consult [`ImeRequest`] and [`ImeCapabilities`].
     ///
     /// Input methods allows the user to compose text without using a keyboard. Requesting one may
     /// be beneficial for touch screen environments or ones where, for example, East Asian scripts
@@ -1188,25 +1193,27 @@ pub trait Window: AsAny + Send + Sync + fmt::Debug {
     ///
     /// ```no_run
     /// # use dpi::{Position, Size};
-    /// # use winit_core::window::{Window, ImePurpose, ImeRequest, ImeCapabilities, ImeRequestData};
+    /// # use winit_core::window::{Window, ImePurpose, ImeRequest, ImeCapabilities, ImeRequestData, ImeEnableRequest};
     /// # fn scope(window: &dyn Window, cursor_pos: Position, cursor_size: Size) {
     /// // Clear previous state by switching off IME
     /// window.request_ime_update(ImeRequest::Disable).expect("Disable cannot fail");
     ///
     /// // Set capabilities by sending a complete initial state
-    /// let ime_request_data = ImeRequestData::default().with_purpose(ImePurpose::Normal);
-    /// let enable_ime = ImeRequest::Enable(ImeCapabilities::all(), ime_request_data.clone());
-    /// window.request_ime_update(enable_ime).expect("Enabling may fail if IME is not supported");
+    /// let request_data = ImeRequestData::default()
+    ///                          .with_purpose(ImePurpose::Normal)
+    ///                          .with_cursor_area(cursor_pos, cursor_size);
+    /// let enable_ime = ImeEnableRequest::new(ImeCapabilities::all(), request_data.clone()).unwrap();
+    /// window.request_ime_update(ImeRequest::Enable(enable_ime)).expect("Enabling may fail if IME is not supported");
     ///
     /// // Update the current state
     /// window
-    ///     .request_ime_update(ImeRequest::Update(ime_request_data.clone()))
+    ///     .request_ime_update(ImeRequest::Update(request_data.clone()))
     ///     .expect("will fail if it's not enabled or ime is not supported");
     ///
     /// // Update the current state
     /// window
     ///     .request_ime_update(ImeRequest::Update(
-    ///         ime_request_data.with_cursor_area(cursor_pos, cursor_size),
+    ///        request_data.with_cursor_area(cursor_pos, cursor_size),
     ///     ))
     ///     .expect("Can fail - we didn't submit a cursor position initially");
     ///
@@ -1217,6 +1224,10 @@ pub trait Window: AsAny + Send + Sync + fmt::Debug {
     fn request_ime_update(&self, request: ImeRequest) -> Result<(), ImeRequestError>;
 
     /// Return enabled by the client [`ImeCapabilities`] for this window.
+    ///
+    /// When the IME is not enabled it'll return `None`.
+    ///
+    /// The defalut value is `None`.
     fn ime_capabilities(&self) -> Option<ImeCapabilities>;
 
     /// Brings the window to the front and sets input focus. Has no effect if the window is
@@ -1627,18 +1638,50 @@ pub enum ImeRequest {
     /// the [`ImeRequestData`] is **not** matching capabilities fully, the default values will be
     /// used instead.
     ///
+    /// **Requesting to update data matching not enabled capabilities will result in update
+    /// being ignored.** The winit backend in such cases is recommended to log a warning. This
+    /// appiles to both [`ImeRequest::Enable`] and [`ImeRequest::Update`]. For details on
+    /// capabilities refer to [`ImeCapabilities`].
+    ///
     /// To update the [`ImeCapabilities`], the IME must be disabled and then re-enabled.
-    Enable(ImeCapabilities, ImeRequestData),
+    Enable(ImeEnableRequest),
     /// Update the state of already enabled IME. Issuing this request before [`ImeRequest::Enable`]
     /// will result in error.
-    ///
-    /// **Requesting to update data matching not enabled capabilities will result in them
-    /// being ignored.**
     Update(ImeRequestData),
     /// Disable the IME.
     ///
     /// **The disable request can not fail**.
     Disable,
+}
+
+/// Initial IME request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImeEnableRequest {
+    capabilities: ImeCapabilities,
+    request_data: ImeRequestData,
+}
+
+impl ImeEnableRequest {
+    /// Create request for the [`ImeRequest::Enable`]
+    ///
+    /// This will return [`None`] if some capability was requested but not set by the IME.
+    pub const fn new(capabilities: ImeCapabilities, request_data: ImeRequestData) -> Option<Self> {
+        if capabilities.contains(ImeCapabilities::CURSOR_AREA) && request_data.cursor_area.is_none()
+        {
+            return None;
+        }
+
+        if capabilities.contains(ImeCapabilities::PURPOSE) && request_data.cursor_area.is_none() {
+            return None;
+        }
+
+        Some(Self { capabilities, request_data })
+    }
+
+    /// Destruct [`ImeEnableRequest`]  into its raw parts.
+    pub const fn into_raw(self) -> (ImeCapabilities, ImeRequestData) {
+        (self.capabilities, self.request_data)
+    }
 }
 
 bitflags::bitflags! {
@@ -1648,8 +1691,8 @@ bitflags::bitflags! {
     /// it will make IME hide the popup window instead of placing it arbitrary over the
     /// client's window surface.
     ///
-    /// When the capability is not enabled, trying to update its' corresponding data
-    /// with [`ImeStateChange`] may be ignored.
+    /// When the capability is not enabled or not supported by the IME, trying to update its'
+    /// corresponding data with [`ImeRequest`] will be ignored.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct ImeCapabilities: u32 {
         /// Client supports setting IME purpose.
@@ -1731,7 +1774,10 @@ impl ImeRequestData {
     }
 }
 
+/// Error from sending request to IME with
+/// [`Window::request_ime_update`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ImeRequestError {
     /// IME is not yet enabled.
     NotEnabled,

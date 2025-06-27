@@ -71,8 +71,8 @@ impl Dispatch<ZwpTextInputV3, TextInputData, WinitState> for TextInputState {
                     None => return,
                 };
 
-                if let Some(capabilities) = window.ime_allowed() {
-                    text_input.set_state(capabilities, window.text_input_state(), true);
+                if let Some(text_input_state) = window.text_input_state() {
+                    text_input.set_state(Some(text_input_state), true);
                     // The input method doesn't have to reply anything, so a synthetic event
                     // carrying an empty state notifies the application about its presence.
                     state.events_sink.push_window_event(WindowEvent::Ime(Ime::Enabled), window_id);
@@ -160,21 +160,29 @@ impl Dispatch<ZwpTextInputV3, TextInputData, WinitState> for TextInputState {
 pub trait ZwpTextInputV3Ext {
     /// Applies the entire state atomically to the input method. It will skip the "enable" request
     /// if `already_enabled` is `true`.
-    fn set_state(&self, capabilities: ImeCapabilities, state: &ClientState, send_enable: bool);
+    fn set_state(&self, state: Option<&ClientState>, send_enable: bool);
 }
 
 impl ZwpTextInputV3Ext for ZwpTextInputV3 {
-    fn set_state(&self, capabilities: ImeCapabilities, state: &ClientState, send_enable: bool) {
+    fn set_state(&self, state: Option<&ClientState>, send_enable: bool) {
+        let state = match state {
+            Some(state) => state,
+            None => {
+                self.disable();
+                self.commit();
+                return;
+            },
+        };
+
         if send_enable {
             self.enable();
         }
 
-        if capabilities.contains(ImeCapabilities::PURPOSE) {
-            self.set_content_type(state.content_type.hint, state.content_type.purpose);
+        if let Some(content_type) = state.content_type() {
+            self.set_content_type(content_type.hint, content_type.purpose);
         }
 
-        if capabilities.contains(ImeCapabilities::CURSOR_AREA) {
-            let (position, size) = state.cursor_area;
+        if let Some((position, size)) = state.cursor_area() {
             let (x, y) = (position.x as i32, position.y as i32);
             let (width, height) = (size.width as i32, size.height as i32);
             // The same cursor can be applied on different seats.
@@ -220,8 +228,10 @@ struct Preedit {
 ///
 /// Fields that are initially set to None are unsupported capabilities
 /// and trying to set them raises an error.
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ClientState {
+    capabilities: ImeCapabilities,
+
     content_type: ContentType,
 
     /// The IME cursor area which should not be covered by the input method popup.
@@ -229,15 +239,29 @@ pub struct ClientState {
 }
 
 impl ClientState {
-    /// Updates the fields of the state which are present in update_fields.
-    pub fn update(
-        &mut self,
+    pub fn new(
         capabilities: ImeCapabilities,
         request_data: ImeRequestData,
         scale_factor: f64,
-    ) {
+    ) -> Self {
+        let mut this = Self {
+            capabilities,
+            content_type: Default::default(),
+            cursor_area: Default::default(),
+        };
+
+        this.update(request_data, scale_factor);
+        this
+    }
+
+    pub fn capabilities(&self) -> ImeCapabilities {
+        self.capabilities
+    }
+
+    /// Updates the fields of the state which are present in update_fields.
+    pub fn update(&mut self, request_data: ImeRequestData, scale_factor: f64) {
         if let Some(purpose) = request_data.purpose {
-            if capabilities.contains(ImeCapabilities::PURPOSE) {
+            if self.capabilities.contains(ImeCapabilities::PURPOSE) {
                 self.content_type = purpose.into();
             } else {
                 warn!("discarding ImePurpose update without capability enabled.");
@@ -245,7 +269,7 @@ impl ClientState {
         }
 
         if let Some((position, size)) = request_data.cursor_area {
-            if capabilities.contains(ImeCapabilities::CURSOR_AREA) {
+            if self.capabilities.contains(ImeCapabilities::CURSOR_AREA) {
                 let position: LogicalPosition<u32> = position.to_logical(scale_factor);
                 let size: LogicalSize<u32> = size.to_logical(scale_factor);
                 self.cursor_area = (position, size);
@@ -254,11 +278,19 @@ impl ClientState {
             }
         }
     }
+
+    pub fn content_type(&self) -> Option<ContentType> {
+        self.capabilities.contains(ImeCapabilities::PURPOSE).then_some(self.content_type)
+    }
+
+    pub fn cursor_area(&self) -> Option<(LogicalPosition<u32>, LogicalSize<u32>)> {
+        self.capabilities.contains(ImeCapabilities::CURSOR_AREA).then_some(self.cursor_area)
+    }
 }
 
 /// Arguments to content_type
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ContentType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentType {
     /// Text input purpose
     purpose: ContentPurpose,
     hint: ContentHint,

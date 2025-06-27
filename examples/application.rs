@@ -40,8 +40,8 @@ use winit::platform::web::{ActiveEventLoopExtWeb, WindowAttributesWeb};
 #[cfg(x11_platform)]
 use winit::platform::x11::{ActiveEventLoopExtX11, WindowAttributesX11};
 use winit::window::{
-    CursorGrabMode, ImeCapabilities, ImePurpose, ImeRequestData, ResizeDirection, Theme, Window,
-    WindowAttributes, WindowId,
+    CursorGrabMode, ImeCapabilities, ImeEnableRequest, ImePurpose, ImeRequestData, ResizeDirection,
+    Theme, Window, WindowAttributes, WindowId,
 };
 use winit_core::application::macos::ApplicationHandlerExtMacOS;
 use winit_core::window::ImeRequest;
@@ -666,12 +666,11 @@ impl WindowState {
         window.set_cursor(CURSORS[named_idx].into());
 
         // Allow IME out of the box.
-        let enable_ime = ImeRequest::Enable(
-            ImeCapabilities::all(),
-            ImeRequestData::default()
-                .with_purpose(ImePurpose::Normal)
-                .with_cursor_area(LogicalPosition { x: 0, y: 0 }.into(), IME_CURSOR_SIZE.into()),
-        );
+        let request_data = ImeRequestData::default()
+            .with_purpose(ImePurpose::Normal)
+            .with_cursor_area(LogicalPosition { x: 0, y: 0 }.into(), IME_CURSOR_SIZE.into());
+        let enable_request = ImeEnableRequest::new(ImeCapabilities::all(), request_data).unwrap();
+        let enable_ime = ImeRequest::Enable(enable_request);
 
         // Initial update
         window.request_ime_update(enable_ime).unwrap();
@@ -713,11 +712,11 @@ impl WindowState {
                 .cursor_position
                 .map(Into::into)
                 .unwrap_or(LogicalPosition { x: 0, y: 0 }.into());
-            let state =
+            let request_data =
                 ImeRequestData::default().with_cursor_area(cursor_pos, IME_CURSOR_SIZE.into());
-            self.window
-                .request_ime_update(ImeRequest::Enable(ImeCapabilities::all(), state))
-                .unwrap();
+            let enable_request =
+                ImeEnableRequest::new(ImeCapabilities::all(), request_data).unwrap();
+            self.window.request_ime_update(ImeRequest::Enable(enable_request)).unwrap();
         };
 
         self.ime_enabled = !self.ime_enabled;

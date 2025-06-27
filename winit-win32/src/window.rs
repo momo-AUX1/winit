@@ -1029,7 +1029,8 @@ impl CoreWindow for Window {
             let hwnd = window.hwnd();
             let mut state = state.lock().unwrap();
             let (capabilities, request_data) = match &request {
-                ImeRequest::Enable(capabilities, request_data) => {
+                ImeRequest::Enable(enable) => {
+                    let (capabilities, request_data) = enable.into_raw();
                     state.ime_capabilities = Some(*capabilities);
                     ImeContext::set_ime_allowed(hwnd, true);
                     (*capabilities, request_data)

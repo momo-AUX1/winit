@@ -2083,7 +2083,9 @@ impl UnownedWindow {
     pub fn request_ime_update(&self, request: CoreImeRequest) -> Result<(), ImeRequestError> {
         let mut shared_state = self.shared_state_lock();
         let (capabilities, state) = match request {
-            CoreImeRequest::Enable(capabilities, state) => {
+            CoreImeRequest::Enable(enable) => {
+                let (capabilities, request_data) = enable.into_raw();
+
                 if shared_state.ime_capabilities.is_some() {
                     return Err(ImeRequestError::AlreadyEnabled);
                 }
@@ -2091,7 +2093,7 @@ impl UnownedWindow {
                 shared_state.ime_capabilities = Some(capabilities);
                 drop(shared_state);
                 self.set_ime_allowed(true);
-                (capabilities, state)
+                (capabilities, request_data)
             },
             CoreImeRequest::Update(state) => {
                 if let Some(capabilities) = shared_state.ime_capabilities {

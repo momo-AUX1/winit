@@ -1677,7 +1677,8 @@ impl WindowDelegate {
     pub fn request_ime_update(&self, request: ImeRequest) -> Result<(), ImeRequestError> {
         let current_caps = self.view().ime_capabilities();
         let request_data = match request {
-            ImeRequest::Enable(capabilities, request_data) => {
+            ImeRequest::Enable(enable) => {
+                let (capabilities, request_data) = enable.into_raw();
                 if current_caps.is_some() {
                     return Err(ImeRequestError::AlreadyEnabled);
                 }
