@@ -28,6 +28,11 @@ See `winrt-example/` for a runnable example and UWP packaging notes.
 - Pointer input: mouse/touch/pen (minimal)
 - Keyboard input: basic key presses and text (minimal)
 - Cursor icon + visibility (CoreCursor)
+- Fullscreen (borderless via `ApplicationView::TryEnterFullScreenMode`)
+- Best-effort surface resize requests (`ApplicationView::TryResizeView`)
+- Preferred minimum size (`ApplicationView::SetPreferredMinSize`)
+- Safe area insets (`ApplicationView::VisibleBounds`)
+- Content protection (`ApplicationView::SetIsScreenCaptureEnabled`)
 
 ## Unsupported or no-op APIs
 
@@ -36,8 +41,8 @@ The following are not supported on WinRT/UWP and are implemented as no-ops or re
 
 - Window movement/positioning
 - Window title, decorations, resizable flags
-- Min/max sizing constraints
-- Fullscreen / window level / attention
+- Max sizing constraints
+- Window level / attention
 - Window icon
 - Cursor grab / cursor position / drag window / hittest
 - IME

@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dpi::{PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size};
+use dpi::{LogicalSize, PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size};
 use winit_core::cursor::Cursor;
 use winit_core::error::{NotSupportedError, RequestError};
 use winit_core::event::WindowEvent;
@@ -14,7 +14,9 @@ use winit_core::window::{
 };
 
 use windows::core::Interface;
+use windows::Foundation::Size as WinRtSize;
 use windows::UI::Core::{CoreCursor, CoreCursorType, CoreWindow as WinRtCoreWindow};
+use windows::UI::ViewManagement::ApplicationView;
 
 use crate::cursor::cursor_icon_to_core;
 use crate::event_loop::Runner;
@@ -136,7 +138,18 @@ impl CoreWindowTrait for Window {
         self.runner.surface_size()
     }
 
-    fn request_surface_size(&self, _size: Size) -> Option<PhysicalSize<u32>> {
+    fn request_surface_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+        let scale_factor = self.scale_factor();
+        let logical = size.to_logical::<f64>(scale_factor);
+        if let Ok(view) = ApplicationView::GetForCurrentView() {
+            let winrt_size = WinRtSize {
+                Width: logical.width as f32,
+                Height: logical.height as f32,
+            };
+            if view.TryResizeView(winrt_size).ok().unwrap_or(false) {
+                return None;
+            }
+        }
         Some(self.surface_size())
     }
 
@@ -145,10 +158,44 @@ impl CoreWindowTrait for Window {
     }
 
     fn safe_area(&self) -> PhysicalInsets<u32> {
-        PhysicalInsets::new(0, 0, 0, 0)
+        let Ok(view) = ApplicationView::GetForCurrentView() else {
+            return PhysicalInsets::new(0, 0, 0, 0);
+        };
+        let Ok(visible) = view.VisibleBounds() else {
+            return PhysicalInsets::new(0, 0, 0, 0);
+        };
+        let Ok(bounds) = self.core_window().Bounds() else {
+            return PhysicalInsets::new(0, 0, 0, 0);
+        };
+
+        let left = (visible.X - bounds.X).max(0.0) as f64;
+        let top = (visible.Y - bounds.Y).max(0.0) as f64;
+        let right = ((bounds.X + bounds.Width) - (visible.X + visible.Width)).max(0.0) as f64;
+        let bottom = ((bounds.Y + bounds.Height) - (visible.Y + visible.Height)).max(0.0) as f64;
+
+        let scale_factor = self.scale_factor();
+        PhysicalInsets::new(
+            (left * scale_factor).round() as u32,
+            (top * scale_factor).round() as u32,
+            (right * scale_factor).round() as u32,
+            (bottom * scale_factor).round() as u32,
+        )
     }
 
-    fn set_min_surface_size(&self, _min_size: Option<Size>) {}
+    fn set_min_surface_size(&self, min_size: Option<Size>) {
+        let Ok(view) = ApplicationView::GetForCurrentView() else {
+            return;
+        };
+        let scale_factor = self.scale_factor();
+        let logical = min_size
+            .unwrap_or_else(|| Size::new(LogicalSize::new(0.0, 0.0)))
+            .to_logical::<f64>(scale_factor);
+        let winrt_size = WinRtSize {
+            Width: logical.width as f32,
+            Height: logical.height as f32,
+        };
+        let _ = view.SetPreferredMinSize(winrt_size);
+    }
 
     fn set_max_surface_size(&self, _max_size: Option<Size>) {}
 
@@ -167,7 +214,7 @@ impl CoreWindowTrait for Window {
     fn set_visible(&self, _visible: bool) {}
 
     fn is_visible(&self) -> Option<bool> {
-        None
+        self.runner.core_window().and_then(|window| window.Visible().ok())
     }
 
     fn set_resizable(&self, _resizable: bool) {}
@@ -194,10 +241,26 @@ impl CoreWindowTrait for Window {
         false
     }
 
-    fn set_fullscreen(&self, _monitor: Option<winit_core::monitor::Fullscreen>) {}
+    fn set_fullscreen(&self, monitor: Option<winit_core::monitor::Fullscreen>) {
+        let Ok(view) = ApplicationView::GetForCurrentView() else {
+            return;
+        };
+        if monitor.is_some() {
+            let _ = view.TryEnterFullScreenMode();
+        } else {
+            let _ = view.ExitFullScreenMode();
+        }
+    }
 
     fn fullscreen(&self) -> Option<winit_core::monitor::Fullscreen> {
-        None
+        let Ok(view) = ApplicationView::GetForCurrentView() else {
+            return None;
+        };
+        if view.IsFullScreenMode().ok().unwrap_or(false) {
+            Some(winit_core::monitor::Fullscreen::Borderless(None))
+        } else {
+            None
+        }
     }
 
     fn set_decorations(&self, _decorations: bool) {}
@@ -258,7 +321,9 @@ impl CoreWindowTrait for Window {
             let icon = *self.cursor_icon.lock().unwrap();
             self.set_core_cursor(icon);
         } else {
-            // CoreWindow doesn't support hiding the cursor; treat as a no-op.
+            if let Some(window) = self.runner.core_window() {
+                let _ = window.SetPointerCursor(None::<&CoreCursor>);
+            }
         }
     }
 
@@ -282,7 +347,12 @@ impl CoreWindowTrait for Window {
         None
     }
 
-    fn set_content_protected(&self, _protected: bool) {}
+    fn set_content_protected(&self, protected: bool) {
+        let Ok(view) = ApplicationView::GetForCurrentView() else {
+            return;
+        };
+        let _ = view.SetIsScreenCaptureEnabled(!protected);
+    }
 
     fn title(&self) -> String {
         String::new()
