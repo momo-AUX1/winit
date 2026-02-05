@@ -3,7 +3,8 @@
 Winit aims to expose an interface that abstracts over window creation and input handling and can
 be used to create both games and applications. It supports the following main graphical platforms:
 - Desktop
-  - Windows
+  - Windows (Win32)
+  - Windows (WinRT/UWP, limited)
   - macOS
   - Unix
     - via X11
@@ -13,6 +14,9 @@ be used to create both games and applications. It supports the following main gr
   - iOS
   - Android
 - Web
+
+WinRT/UWP support is currently minimal and intended for booting apps and basic input. Many window
+management APIs are no-ops or return `NotSupported` on that platform.
 
 Most platforms expose capabilities that cannot be meaningfully transposed onto others. Winit does not
 aim to support every single feature of every platform, but rather to abstract over the common features

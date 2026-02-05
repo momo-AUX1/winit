@@ -15,6 +15,8 @@ winit = "0.31.0-beta.2"
 
 For features _within_ the scope of winit, see [FEATURES.md](FEATURES.md).
 
+For WinRT/UWP usage and limitations, see [docs/winrt.md](docs/winrt.md).
+
 For features _outside_ the scope of winit, see [Are we GUI Yet?](https://areweguiyet.com/) and [Are we game yet?](https://arewegameyet.rs/), depending on what kind of project you're looking to do.
 
 ## Contact Us

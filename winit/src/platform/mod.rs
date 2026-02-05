@@ -13,7 +13,8 @@
 #![doc = concat!("| iOS/visionOS/tvOS/Mac Catalyst | [`winit-uikit`](https://docs.rs/winit-uikit/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::ios` |")]
 #![doc = concat!("| Wayland | [`winit-wayland`](https://docs.rs/winit-wayland/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::wayland` |")]
 #![doc = concat!("| Web | [`winit-web`](https://docs.rs/winit-web/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::web` |")]
-#![doc = concat!("| Windows | [`winit-win32`](https://docs.rs/winit-win32/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::windows` |")]
+#![doc = concat!("| Windows (Win32) | [`winit-win32`](https://docs.rs/winit-win32/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::windows` |")]
+#![doc = concat!("| Windows (WinRT/UWP) | [`winit-winrt`](https://docs.rs/winit-winrt/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::winrt` |")]
 #![doc = concat!("| X11 | [`winit-x11`](https://docs.rs/winit-x11/", env!("CARGO_PKG_VERSION"), "/) | `winit::platform::x11` |")]
 //! ## Common modules
 //!
@@ -33,8 +34,10 @@ pub use winit_uikit as ios;
 pub use winit_wayland as wayland;
 #[cfg(web_platform)]
 pub use winit_web as web;
-#[cfg(windows_platform)]
+#[cfg(all(windows_platform, not(winrt_platform)))]
 pub use winit_win32 as windows;
+#[cfg(winrt_platform)]
+pub use winit_winrt as winrt;
 #[cfg(x11_platform)]
 pub use winit_x11 as x11;
 

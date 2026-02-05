@@ -10,8 +10,10 @@ pub(crate) use winit_orbital as platform;
 pub(crate) use winit_uikit as platform;
 #[cfg(web_platform)]
 pub(crate) use winit_web as platform;
-#[cfg(windows_platform)]
+#[cfg(all(windows_platform, not(winrt_platform)))]
 pub(crate) use winit_win32 as platform;
+#[cfg(winrt_platform)]
+pub(crate) use winit_winrt as platform;
 
 #[cfg(any(x11_platform, wayland_platform))]
 use self::linux as platform;

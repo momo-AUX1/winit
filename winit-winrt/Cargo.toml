@@ -1,0 +1,40 @@
+[package]
+description = "Winit's WinRT/UWP backend"
+documentation = "https://docs.rs/winit-winrt"
+edition.workspace = true
+license.workspace = true
+name = "winit-winrt"
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+serde = ["dep:serde", "bitflags/serde", "smol_str/serde", "dpi/serde", "winit-core/serde"]
+
+[dependencies]
+bitflags.workspace = true
+dpi.workspace = true
+rwh_06.workspace = true
+serde = { workspace = true, optional = true }
+smol_str.workspace = true
+tracing.workspace = true
+winit-core.workspace = true
+windows = { workspace = true, features = [
+  "Foundation",
+  "ApplicationModel_Core",
+  "UI_Core",
+  "UI_Input",
+  "UI_ViewManagement",
+  "Devices_Input",
+  "System",
+  "Graphics_Display",
+  "Win32_System_WinRT",
+  "implement",
+] }
+
+[dev-dependencies]
+winit.workspace = true
+
+[package.metadata.docs.rs]
+features = ["serde"]
+targets = ["x86_64-pc-windows-gnu"]

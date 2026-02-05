@@ -23,6 +23,7 @@ winit-uikit = { version = "=0.31.0-beta.2", path = "winit-uikit" }
 winit-wayland = { version = "=0.31.0-beta.2", path = "winit-wayland", default-features = false }
 winit-web = { version = "=0.31.0-beta.2", path = "winit-web" }
 winit-win32 = { version = "=0.31.0-beta.2", path = "winit-win32" }
+winit-winrt = { version = "=0.31.0-beta.2", path = "winit-winrt" }
 winit-x11 = { version = "=0.31.0-beta.2", path = "winit-x11" }
 
 # Core dependencies.
@@ -64,6 +65,7 @@ objc2-ui-kit = { version = "0.3.2", default-features = false }
 
 # Windows dependencies.
 unicode-segmentation = "1.7.1"
+windows = "0.54"
 windows-sys = "0.61"
 
 # Linux dependencies.

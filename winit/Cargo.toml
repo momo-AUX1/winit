@@ -91,8 +91,11 @@ winit-appkit.workspace = true
 [target.'cfg(all(target_vendor = "apple", not(target_os = "macos")))'.dependencies]
 winit-uikit.workspace = true
 
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(all(target_os = "windows", not(__WINRT__)))'.dependencies]
 winit-win32.workspace = true
+
+[target.'cfg(all(target_os = "windows", __WINRT__))'.dependencies]
+winit-winrt.workspace = true
 
 # Linux
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "android", target_vendor = "apple"))))'.dependencies]

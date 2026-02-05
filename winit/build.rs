@@ -12,6 +12,7 @@ fn main() {
         macos_platform: { target_os = "macos" },
         ios_platform: { all(target_vendor = "apple", not(target_os = "macos")) },
         windows_platform: { target_os = "windows" },
+        winrt_platform: { all(windows_platform, __WINRT__) },
         free_unix: { all(unix, not(target_vendor = "apple"), not(android_platform), not(target_os = "emscripten")) },
         redox: { target_os = "redox" },
 
@@ -23,4 +24,5 @@ fn main() {
 
     // Winit defined cfgs.
     println!("cargo:rustc-check-cfg=cfg(unreleased_changelogs)");
+    println!("cargo:rustc-check-cfg=cfg(__WINRT__)");
 }

@@ -219,12 +219,12 @@ impl EventLoop {
         mut app: A,
     ) -> Result<(), EventLoopError> {
         #[cfg(any(
-            windows_platform,
             macos_platform,
             android_platform,
             orbital_platform,
             x11_platform,
             wayland_platform,
+            all(windows_platform, not(winrt_platform)),
         ))]
         {
             let result = self.event_loop.run_app_on_demand(&mut app);
@@ -238,6 +238,10 @@ impl EventLoop {
             Ok(())
         }
         #[cfg(ios_platform)]
+        {
+            self.event_loop.run_app_never_return(app)
+        }
+        #[cfg(winrt_platform)]
         {
             self.event_loop.run_app_never_return(app)
         }
@@ -323,11 +327,11 @@ impl AsRawFd for EventLoop {
 }
 
 #[cfg(any(
-    windows_platform,
     macos_platform,
     android_platform,
     x11_platform,
     wayland_platform,
+    all(windows_platform, not(winrt_platform)),
     docsrs,
 ))]
 impl winit_core::event_loop::pump_events::EventLoopExtPumpEvents for EventLoop {
@@ -342,12 +346,12 @@ impl winit_core::event_loop::pump_events::EventLoopExtPumpEvents for EventLoop {
 
 #[allow(unused_imports)]
 #[cfg(any(
-    windows_platform,
     macos_platform,
     android_platform,
     orbital_platform,
     x11_platform,
     wayland_platform,
+    all(windows_platform, not(winrt_platform)),
     docsrs,
 ))]
 impl winit_core::event_loop::run_on_demand::EventLoopExtRunOnDemand for EventLoop {
@@ -360,6 +364,13 @@ impl winit_core::event_loop::run_on_demand::EventLoopExtRunOnDemand for EventLoo
 impl winit_core::event_loop::register::EventLoopExtRegister for EventLoop {
     fn register_app<A: ApplicationHandler + 'static>(self, app: A) {
         self.event_loop.register_app(app)
+    }
+}
+
+#[cfg(any(ios_platform, winrt_platform, docsrs))]
+impl winit_core::event_loop::never_return::EventLoopExtNeverReturn for EventLoop {
+    fn run_app_never_return<A: ApplicationHandler + 'static>(self, app: A) -> ! {
+        self.event_loop.run_app_never_return(app)
     }
 }
 
