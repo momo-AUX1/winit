@@ -3,20 +3,23 @@
 #![allow(non_snake_case)]
 
 #[cfg(target_env = "msvc")]
-compile_error!("WinRT backend requires the GNU toolchain. Use target x86_64-pc-windows-gnu with cfg(__WINRT__).");
+compile_error!(
+    "WinRT backend requires the GNU toolchain. Use target x86_64-pc-windows-gnu with \
+     cfg(__WINRT__)."
+);
 
 mod cursor;
 mod event_loop;
 mod monitor;
 mod window;
 
-use winit_core::event_loop::ActiveEventLoop as CoreActiveEventLoop;
-use winit_core::window::Window as CoreWindow;
-use windows::UI::Core::{CoreDispatcher, CoreWindow as WinRtCoreWindow};
-
 pub use event_loop::{ActiveEventLoop, EventLoop, PlatformSpecificEventLoopAttributes};
 pub use monitor::MonitorHandle;
 pub use window::Window;
+use windows::UI::Core::{CoreDispatcher, CoreWindow as WinRtCoreWindow};
+use winit_core::event_loop::ActiveEventLoop as CoreActiveEventLoop;
+use winit_core::keyboard::{NativeKeyCode, PhysicalKey};
+use winit_core::window::Window as CoreWindow;
 
 /// Additional methods on [`ActiveEventLoop`] that are specific to WinRT/UWP.
 pub trait EventLoopExtWinRt {
@@ -42,4 +45,15 @@ impl WindowExtWinRt for dyn CoreWindow + '_ {
         let window = self.cast_ref::<Window>().unwrap();
         window.core_window()
     }
+}
+
+pub fn physicalkey_to_scancode(physical_key: PhysicalKey) -> Option<u32> {
+    match physical_key {
+        PhysicalKey::Unidentified(NativeKeyCode::Windows(scancode)) => Some(scancode as u32),
+        _ => None,
+    }
+}
+
+pub fn scancode_to_physicalkey(scancode: u32) -> PhysicalKey {
+    PhysicalKey::Unidentified(NativeKeyCode::Windows(scancode as u16))
 }

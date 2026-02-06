@@ -1,8 +1,26 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+
 use dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
 use smol_str::SmolStr;
+use windows::core::{implement, AgileReference, IInspectable, Result as WinResult};
+use windows::ApplicationModel::Core::{
+    CoreApplication, CoreApplicationView, IFrameworkView, IFrameworkViewSource,
+    IFrameworkViewSource_Impl, IFrameworkView_Impl,
+};
+use windows::Devices::Input::PointerDeviceType;
+use windows::Foundation::TypedEventHandler;
+use windows::Graphics::Display::DisplayInformation;
+use windows::System::VirtualKey;
+use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::UI::Core::{
+    CharacterReceivedEventArgs, CoreDispatcher, CoreDispatcherPriority, CoreProcessEventsOption,
+    CoreVirtualKeyStates, CoreWindow as WinRtCoreWindow, CoreWindowActivationState,
+    CoreWindowEventArgs, KeyEventArgs, PointerEventArgs, WindowActivatedEventArgs,
+    WindowSizeChangedEventArgs,
+};
+use windows::UI::Input::{PointerPointProperties, PointerUpdateKind};
 use winit_core::application::ApplicationHandler;
 use winit_core::cursor::{CustomCursor, CustomCursorSource};
 use winit_core::error::{EventLoopError, NotSupportedError, RequestError};
@@ -13,27 +31,11 @@ use winit_core::event_loop::{
     ActiveEventLoop as RootActiveEventLoop, ControlFlow, DeviceEvents, EventLoopProxy as CoreProxy,
     EventLoopProxyProvider, OwnedDisplayHandle as CoreOwnedDisplayHandle,
 };
-use winit_core::keyboard::{Key, KeyLocation, ModifiersKeys, ModifiersState, NativeKeyCode, PhysicalKey};
+use winit_core::keyboard::{
+    Key, KeyLocation, ModifiersKeys, ModifiersState, NativeKeyCode, PhysicalKey,
+};
 use winit_core::monitor::MonitorHandle as CoreMonitorHandle;
 use winit_core::window::{Window as CoreWindowTrait, WindowAttributes, WindowId};
-
-use windows::core::{implement, AgileReference, Result as WinResult, IInspectable};
-use windows::ApplicationModel::Core::{
-    CoreApplication, CoreApplicationView, IFrameworkView, IFrameworkViewSource,
-    IFrameworkViewSource_Impl, IFrameworkView_Impl,
-};
-use windows::Foundation::TypedEventHandler;
-use windows::Devices::Input::PointerDeviceType;
-use windows::Graphics::Display::DisplayInformation;
-use windows::System::VirtualKey;
-use windows::UI::Core::{
-    CharacterReceivedEventArgs, CoreDispatcher, CoreDispatcherPriority, CoreProcessEventsOption,
-    CoreVirtualKeyStates, CoreWindow as WinRtCoreWindow, CoreWindowActivationState,
-    CoreWindowEventArgs, KeyEventArgs, PointerEventArgs, WindowActivatedEventArgs,
-    WindowSizeChangedEventArgs,
-};
-use windows::UI::Input::{PointerPointProperties, PointerUpdateKind};
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
 use crate::monitor::MonitorHandle;
 use crate::window::Window;
@@ -230,19 +232,11 @@ impl Runner {
     }
 
     pub(crate) fn core_window(&self) -> Option<WinRtCoreWindow> {
-        self.window
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|agile| agile.resolve().ok())
+        self.window.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
     }
 
     pub(crate) fn dispatcher(&self) -> Option<CoreDispatcher> {
-        self.dispatcher
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|agile| agile.resolve().ok())
+        self.dispatcher.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
     }
 
     pub(crate) fn surface_size(&self) -> PhysicalSize<u32> {
@@ -328,27 +322,32 @@ impl Runner {
     }
 
     fn register_window_handlers(self: &Arc<Self>, window: &WinRtCoreWindow) {
-        let _ = window.Activated(&TypedEventHandler::<WinRtCoreWindow, WindowActivatedEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    let active = args.WindowActivationState()? != CoreWindowActivationState::Deactivated;
-                    runner.has_focus.store(active, Ordering::Relaxed);
-                    runner.queue_window_event(WindowEvent::Focused(active));
+        let _ = window.Activated(
+            &TypedEventHandler::<WinRtCoreWindow, WindowActivatedEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        let active =
+                            args.WindowActivationState()? != CoreWindowActivationState::Deactivated;
+                        runner.has_focus.store(active, Ordering::Relaxed);
+                        runner.queue_window_event(WindowEvent::Focused(active));
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }),
+        );
 
-        let _ = window.SizeChanged(&TypedEventHandler::<WinRtCoreWindow, WindowSizeChangedEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_size_changed(args);
+        let _ = window.SizeChanged(
+            &TypedEventHandler::<WinRtCoreWindow, WindowSizeChangedEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_size_changed(args);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }),
+        );
 
         let _ = window.Closed(&TypedEventHandler::<WinRtCoreWindow, CoreWindowEventArgs>::new({
             let runner = Arc::clone(self);
@@ -358,65 +357,72 @@ impl Runner {
             }
         }));
 
-        let _ = window.PointerMoved(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_moved(args);
+        let _ =
+            window.PointerMoved(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_moved(args);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }));
 
-        let _ = window.PointerPressed(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_button(args, ElementState::Pressed);
+        let _ =
+            window.PointerPressed(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_button(args, ElementState::Pressed);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }));
 
-        let _ = window.PointerReleased(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_button(args, ElementState::Released);
+        let _ =
+            window.PointerReleased(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_button(args, ElementState::Released);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }));
 
-        let _ = window.PointerEntered(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_entered(args);
+        let _ =
+            window.PointerEntered(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_entered(args);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }));
 
-        let _ = window.PointerExited(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_exited(args);
+        let _ =
+            window.PointerExited(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_exited(args);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }));
 
-        let _ = window.PointerWheelChanged(&TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
-            let runner = Arc::clone(self);
-            move |_, args| {
-                if let Some(args) = args {
-                    runner.handle_pointer_wheel(args);
+        let _ = window.PointerWheelChanged(
+            &TypedEventHandler::<WinRtCoreWindow, PointerEventArgs>::new({
+                let runner = Arc::clone(self);
+                move |_, args| {
+                    if let Some(args) = args {
+                        runner.handle_pointer_wheel(args);
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-        }));
+            }),
+        );
 
         let _ = window.KeyDown(&TypedEventHandler::<WinRtCoreWindow, KeyEventArgs>::new({
             let runner = Arc::clone(self);
@@ -438,26 +444,23 @@ impl Runner {
             }
         }));
 
-        let _ = window.CharacterReceived(
-            &TypedEventHandler::<WinRtCoreWindow, CharacterReceivedEventArgs>::new({
-                let runner = Arc::clone(self);
-                move |_, args| {
-                    if let Some(args) = args {
-                        runner.handle_character_received(args);
-                    }
-                    Ok(())
+        let _ = window.CharacterReceived(&TypedEventHandler::<
+            WinRtCoreWindow,
+            CharacterReceivedEventArgs,
+        >::new({
+            let runner = Arc::clone(self);
+            move |_, args| {
+                if let Some(args) = args {
+                    runner.handle_character_received(args);
                 }
-            }),
-        );
+                Ok(())
+            }
+        }));
     }
 
     fn register_display_handlers(self: &Arc<Self>) {
-        let Some(info) = self
-            .display_info
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|agile| agile.resolve().ok())
+        let Some(info) =
+            self.display_info.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
         else {
             return;
         };
@@ -479,12 +482,8 @@ impl Runner {
     }
 
     fn handle_dpi_changed(&self) {
-        let Some(info) = self
-            .display_info
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|agile| agile.resolve().ok())
+        let Some(info) =
+            self.display_info.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
         else {
             return;
         };
@@ -620,11 +619,10 @@ impl Runner {
 
         if state == ElementState::Pressed {
             let mods = modifiers.state();
-            let expect_text =
-                matches!(event.logical_key, Key::Character(_))
-                    && !mods.control_key()
-                    && !mods.alt_key()
-                    && !mods.meta_key();
+            let expect_text = matches!(event.logical_key, Key::Character(_))
+                && !mods.control_key()
+                && !mods.alt_key()
+                && !mods.meta_key();
 
             let pending_to_flush = self.pending_keydown.lock().unwrap().take();
             if let Some(pending) = pending_to_flush {
@@ -690,7 +688,8 @@ impl Runner {
         let shift = key_down(&window, VirtualKey::Shift);
         let ctrl = key_down(&window, VirtualKey::Control);
         let alt = key_down(&window, VirtualKey::Menu);
-        let meta = key_down(&window, VirtualKey::LeftWindows) || key_down(&window, VirtualKey::RightWindows);
+        let meta = key_down(&window, VirtualKey::LeftWindows)
+            || key_down(&window, VirtualKey::RightWindows);
         let mut state = ModifiersState::empty();
         if shift {
             state.insert(ModifiersState::SHIFT);
@@ -710,21 +709,22 @@ impl Runner {
     fn pointer_details(
         &self,
         point: &windows::UI::Input::PointerPoint,
-    ) -> (PhysicalPosition<f64>, bool, winit_core::event::PointerSource, winit_core::event::PointerKind) {
+    ) -> (
+        PhysicalPosition<f64>,
+        bool,
+        winit_core::event::PointerSource,
+        winit_core::event::PointerKind,
+    ) {
         let position = point.Position().unwrap_or_default();
         let logical = LogicalPosition::new(position.X as f64, position.Y as f64);
         let physical = logical.to_physical::<f64>(self.scale_factor());
-        let primary = point
-            .Properties()
-            .ok()
-            .and_then(|p| p.IsPrimary().ok())
-            .unwrap_or(true);
+        let primary = point.Properties().ok().and_then(|p| p.IsPrimary().ok()).unwrap_or(true);
 
         let source = match point.PointerDevice().ok().and_then(|d| d.PointerDeviceType().ok()) {
             Some(PointerDeviceType::Mouse) => winit_core::event::PointerSource::Mouse,
             Some(PointerDeviceType::Touch) => winit_core::event::PointerSource::Touch {
                 finger_id: winit_core::event::FingerId::from_raw(
-                    point.PointerId().unwrap_or(0) as usize,
+                    point.PointerId().unwrap_or(0) as usize
                 ),
                 force: None,
             },
@@ -766,7 +766,9 @@ impl Runner {
         }
 
         if let Some(app_ptr) = self.take_app() {
-            unsafe { drop(Box::from_raw(app_ptr)); }
+            unsafe {
+                drop(Box::from_raw(app_ptr));
+            }
         }
     }
 
@@ -778,10 +780,10 @@ impl Runner {
         match control_flow {
             ControlFlow::Poll => {
                 let _ = dispatcher.ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
-            }
+            },
             ControlFlow::Wait => {
                 let _ = dispatcher.ProcessEvents(CoreProcessEventsOption::ProcessOneAndAllPending);
-            }
+            },
             ControlFlow::WaitUntil(instant) => {
                 let now = std::time::Instant::now();
                 if now < instant {
@@ -789,7 +791,7 @@ impl Runner {
                     std::thread::sleep(duration);
                 }
                 let _ = dispatcher.ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
-            }
+            },
         }
     }
 
@@ -800,18 +802,20 @@ impl Runner {
             std::mem::swap(&mut *lock, &mut queue);
         }
         let app_ptr = self.app_ptr();
-        let Some(app_ptr) = app_ptr else { return; };
+        let Some(app_ptr) = app_ptr else {
+            return;
+        };
 
         for event in queue {
             unsafe {
                 match event {
                     Event::Window { window_id, event } => {
                         (&mut *app_ptr).window_event(active, window_id, event)
-                    }
+                    },
                     Event::WakeUp => {
                         self.wakeup_pending.store(false, Ordering::SeqCst);
                         (&mut *app_ptr).proxy_wake_up(active)
-                    }
+                    },
                 }
             }
         }
@@ -887,7 +891,7 @@ fn next_start_cause(control_flow: ControlFlow) -> StartCause {
             } else {
                 StartCause::WaitCancelled { start: now, requested_resume: Some(instant) }
             }
-        }
+        },
     }
 }
 
@@ -1013,13 +1017,15 @@ fn button_source_from_point(
                 _ => MouseButton::Left,
             };
             ButtonSource::Mouse(mouse)
-        }
+        },
         winit_core::event::PointerSource::Touch { finger_id, .. } => {
             ButtonSource::Touch { finger_id: *finger_id, force: None }
-        }
-        winit_core::event::PointerSource::TabletTool { .. } => {
-            ButtonSource::TabletTool { kind: TabletToolKind::Pen, button: TabletToolButton::Contact, data: TabletToolData::default() }
-        }
+        },
+        winit_core::event::PointerSource::TabletTool { .. } => ButtonSource::TabletTool {
+            kind: TabletToolKind::Pen,
+            button: TabletToolButton::Contact,
+            data: TabletToolData::default(),
+        },
         winit_core::event::PointerSource::Unknown => ButtonSource::Unknown(0),
     }
 }

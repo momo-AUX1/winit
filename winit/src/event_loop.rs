@@ -472,7 +472,7 @@ impl winit_web::EventLoopExtWeb for EventLoop {
     }
 }
 
-#[cfg(windows_platform)]
+#[cfg(all(windows_platform, not(winrt_platform)))]
 impl winit_win32::EventLoopBuilderExtWindows for EventLoopBuilder {
     #[inline]
     fn with_any_thread(&mut self, any_thread: bool) -> &mut Self {

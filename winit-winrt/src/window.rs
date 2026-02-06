@@ -3,6 +3,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use dpi::{LogicalSize, PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size};
+use windows::core::Interface;
+use windows::Foundation::Size as WinRtSize;
+use windows::UI::Core::{CoreCursor, CoreCursorType, CoreWindow as WinRtCoreWindow};
+use windows::UI::ViewManagement::ApplicationView;
 use winit_core::cursor::Cursor;
 use winit_core::error::{NotSupportedError, RequestError};
 use winit_core::event::WindowEvent;
@@ -12,11 +16,6 @@ use winit_core::window::{
     UserAttentionType, Window as CoreWindowTrait, WindowAttributes, WindowButtons, WindowId,
     WindowLevel,
 };
-
-use windows::core::Interface;
-use windows::Foundation::Size as WinRtSize;
-use windows::UI::Core::{CoreCursor, CoreCursorType, CoreWindow as WinRtCoreWindow};
-use windows::UI::ViewManagement::ApplicationView;
 
 use crate::cursor::cursor_icon_to_core;
 use crate::event_loop::Runner;
@@ -56,9 +55,7 @@ impl Window {
     }
 
     pub(crate) fn core_window(&self) -> WinRtCoreWindow {
-        self.runner
-            .core_window()
-            .expect("CoreWindow must be available on WinRT")
+        self.runner.core_window().expect("CoreWindow must be available on WinRT")
     }
 
     fn set_core_cursor(&self, cursor_type: CoreCursorType) {
@@ -142,10 +139,8 @@ impl CoreWindowTrait for Window {
         let scale_factor = self.scale_factor();
         let logical = size.to_logical::<f64>(scale_factor);
         if let Ok(view) = ApplicationView::GetForCurrentView() {
-            let winrt_size = WinRtSize {
-                Width: logical.width as f32,
-                Height: logical.height as f32,
-            };
+            let winrt_size =
+                WinRtSize { Width: logical.width as f32, Height: logical.height as f32 };
             if view.TryResizeView(winrt_size).ok().unwrap_or(false) {
                 return None;
             }
@@ -190,10 +185,7 @@ impl CoreWindowTrait for Window {
         let logical = min_size
             .unwrap_or_else(|| Size::new(LogicalSize::new(0.0, 0.0)))
             .to_logical::<f64>(scale_factor);
-        let winrt_size = WinRtSize {
-            Width: logical.width as f32,
-            Height: logical.height as f32,
-        };
+        let winrt_size = WinRtSize { Width: logical.width as f32, Height: logical.height as f32 };
         let _ = view.SetPreferredMinSize(winrt_size);
     }
 
