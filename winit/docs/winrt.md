@@ -33,6 +33,9 @@ See `winrt-example/` for a runnable example and UWP packaging notes.
 - Preferred minimum size (`ApplicationView::SetPreferredMinSize`)
 - Safe area insets (`ApplicationView::VisibleBounds`)
 - Content protection (`ApplicationView::SetIsScreenCaptureEnabled`)
+- Win32 DWM compatibility shims (`set_system_backdrop`, `set_undecorated_shadow`,
+  `set_border_color`, `set_title_background_color`, `set_title_text_color`,
+  `set_corner_preference`) are accepted and treated as no-ops on WinRT.
 
 ## Unsupported or no-op APIs
 
