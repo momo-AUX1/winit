@@ -594,6 +594,11 @@ impl Runner {
 
     fn handle_key(&self, args: &KeyEventArgs, state: ElementState) {
         let virtual_key = args.VirtualKey().unwrap_or(VirtualKey::None);
+        // On Xbox, the B button is commonly used as a "back" action. Mark it as handled so the
+        // system doesn't perform default navigation, and forward it to the app.
+        if virtual_key == VirtualKey::GamepadB {
+            let _ = args.SetHandled(true);
+        }
         let status = args.KeyStatus().unwrap_or_default();
         let scancode = status.ScanCode as u16;
         let repeat = status.RepeatCount > 1;
@@ -930,6 +935,7 @@ fn map_virtual_key_named(virtual_key: VirtualKey) -> Option<winit_core::keyboard
         VirtualKey::Enter => Some(NamedKey::Enter),
         VirtualKey::Escape => Some(NamedKey::Escape),
         VirtualKey::Back => Some(NamedKey::Backspace),
+        VirtualKey::GamepadB => Some(NamedKey::GoBack),
         VirtualKey::Tab => Some(NamedKey::Tab),
         VirtualKey::Delete => Some(NamedKey::Delete),
         VirtualKey::Insert => Some(NamedKey::Insert),
