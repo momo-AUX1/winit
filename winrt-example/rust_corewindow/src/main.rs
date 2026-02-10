@@ -82,3 +82,15 @@ pub extern "system" fn wWinMain(
     let _ = CoreApplication::Run(&app);
     0
 }
+
+// MinGW defaults to expecting `WinMain` unless linked with `-municode`. Provide both entry points
+// so the example links in either configuration.
+#[no_mangle]
+pub extern "system" fn WinMain(
+    _instance: isize,
+    _prev_instance: isize,
+    _cmd_line: *mut u8,
+    _show_cmd: i32,
+) -> i32 {
+    wWinMain(_instance, _prev_instance, _cmd_line as *mut u16, _show_cmd)
+}

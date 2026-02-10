@@ -13,7 +13,6 @@ use windows::Devices::Input::PointerDeviceType;
 use windows::Foundation::TypedEventHandler;
 use windows::Graphics::Display::DisplayInformation;
 use windows::System::VirtualKey;
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use windows::UI::Core::{
     CharacterReceivedEventArgs, CoreDispatcher, CoreDispatcherPriority, CoreProcessEventsOption,
     CoreVirtualKeyStates, CoreWindow as WinRtCoreWindow, CoreWindowActivationState,
@@ -38,6 +37,7 @@ use winit_core::monitor::MonitorHandle as CoreMonitorHandle;
 use winit_core::window::{Window as CoreWindowTrait, WindowAttributes, WindowId};
 
 use crate::monitor::MonitorHandle;
+use crate::util::ensure_winrt_initialized;
 use crate::window::Window;
 
 const GLOBAL_WINDOW_ID: WindowId = WindowId::from_raw(0);
@@ -65,7 +65,7 @@ impl EventLoop {
             return Err(EventLoopError::RecreationAttempt);
         }
 
-        let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        ensure_winrt_initialized();
 
         let runner = Arc::new(Runner::new());
         let window_target = ActiveEventLoop { runner: Arc::clone(&runner) };
@@ -232,10 +232,12 @@ impl Runner {
     }
 
     pub(crate) fn core_window(&self) -> Option<WinRtCoreWindow> {
+        ensure_winrt_initialized();
         self.window.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
     }
 
     pub(crate) fn dispatcher(&self) -> Option<CoreDispatcher> {
+        ensure_winrt_initialized();
         self.dispatcher.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
     }
 
@@ -248,7 +250,7 @@ impl Runner {
     }
 
     pub(crate) fn monitor_handle(&self) -> MonitorHandle {
-        MonitorHandle::new(self.scale_factor())
+        MonitorHandle::new(self.scale_factor(), self.display_info.lock().unwrap().clone())
     }
 
     pub(crate) fn has_focus(&self) -> bool {
@@ -298,6 +300,7 @@ impl Runner {
     }
 
     fn set_window(self: &Arc<Self>, window: WinRtCoreWindow) {
+        ensure_winrt_initialized();
         if let Ok(agile) = AgileReference::new(&window) {
             *self.window.lock().unwrap() = Some(agile);
         }
@@ -459,6 +462,7 @@ impl Runner {
     }
 
     fn register_display_handlers(self: &Arc<Self>) {
+        ensure_winrt_initialized();
         let Some(info) =
             self.display_info.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
         else {
@@ -482,6 +486,7 @@ impl Runner {
     }
 
     fn handle_dpi_changed(&self) {
+        ensure_winrt_initialized();
         let Some(info) =
             self.display_info.lock().unwrap().as_ref().and_then(|agile| agile.resolve().ok())
         else {

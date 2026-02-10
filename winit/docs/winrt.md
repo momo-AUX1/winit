@@ -36,6 +36,9 @@ See `winrt-example/` for a runnable example and UWP packaging notes.
 - Win32 DWM compatibility shims (`set_system_backdrop`, `set_undecorated_shadow`,
   `set_border_color`, `set_title_background_color`, `set_title_text_color`,
   `set_corner_preference`) are accepted and treated as no-ops on WinRT.
+- Basic monitor info via `DisplayInformation::{ScreenWidthInRawPixels, ScreenHeightInRawPixels}`
+  (refresh rate is reported on a best-effort basis via `HdmiDisplayInformation` and may be
+  unavailable depending on device/runtime support).
 
 ## Unsupported or no-op APIs
 

@@ -28,6 +28,7 @@ windows = { workspace = true, features = [
   "Devices_Input",
   "System",
   "Graphics_Display",
+  "Graphics_Display_Core",
   "Win32_System_WinRT",
   "implement",
 ] }

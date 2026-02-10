@@ -1,5 +1,6 @@
 [workspace]
 default-members = ["winit"]
+exclude = ["winrt-example", "winrt-example/*"]
 members = ["dpi", "winit*"]
 resolver = "2"
 

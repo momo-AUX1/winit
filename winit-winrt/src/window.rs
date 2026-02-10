@@ -19,6 +19,7 @@ use winit_core::window::{
 
 use crate::cursor::cursor_icon_to_core;
 use crate::event_loop::Runner;
+use crate::util::ensure_winrt_initialized;
 
 pub struct Window {
     runner: Arc<Runner>,
@@ -136,6 +137,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn request_surface_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+        ensure_winrt_initialized();
         let scale_factor = self.scale_factor();
         let logical = size.to_logical::<f64>(scale_factor);
         if let Ok(view) = ApplicationView::GetForCurrentView() {
@@ -153,6 +155,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn safe_area(&self) -> PhysicalInsets<u32> {
+        ensure_winrt_initialized();
         let Ok(view) = ApplicationView::GetForCurrentView() else {
             return PhysicalInsets::new(0, 0, 0, 0);
         };
@@ -178,6 +181,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn set_min_surface_size(&self, min_size: Option<Size>) {
+        ensure_winrt_initialized();
         let Ok(view) = ApplicationView::GetForCurrentView() else {
             return;
         };
@@ -234,6 +238,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn set_fullscreen(&self, monitor: Option<winit_core::monitor::Fullscreen>) {
+        ensure_winrt_initialized();
         let Ok(view) = ApplicationView::GetForCurrentView() else {
             return;
         };
@@ -245,6 +250,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn fullscreen(&self) -> Option<winit_core::monitor::Fullscreen> {
+        ensure_winrt_initialized();
         let Ok(view) = ApplicationView::GetForCurrentView() else {
             return None;
         };
@@ -340,6 +346,7 @@ impl CoreWindowTrait for Window {
     }
 
     fn set_content_protected(&self, protected: bool) {
+        ensure_winrt_initialized();
         let Ok(view) = ApplicationView::GetForCurrentView() else {
             return;
         };

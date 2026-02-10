@@ -11,6 +11,7 @@ compile_error!(
 mod cursor;
 mod event_loop;
 mod monitor;
+mod util;
 mod window;
 
 pub use event_loop::{ActiveEventLoop, EventLoop, PlatformSpecificEventLoopAttributes};

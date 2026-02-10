@@ -41,6 +41,14 @@ impl ApplicationHandler for App {
     }
 }
 
+fn entry() -> i32 {
+    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+
+    let event_loop = EventLoop::new().unwrap();
+    let _ = event_loop.run_app(App::default());
+    0
+}
+
 #[no_mangle]
 pub extern "system" fn wWinMain(
     _instance: isize,
@@ -48,9 +56,17 @@ pub extern "system" fn wWinMain(
     _cmd_line: *mut u16,
     _show_cmd: i32,
 ) -> i32 {
-    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+    entry()
+}
 
-    let event_loop = EventLoop::new().unwrap();
-    let _ = event_loop.run_app(App::default());
-    0
+// MinGW defaults to expecting `WinMain` unless linked with `-municode`. Provide both entry points
+// so the example links in either configuration.
+#[no_mangle]
+pub extern "system" fn WinMain(
+    _instance: isize,
+    _prev_instance: isize,
+    _cmd_line: *mut u8,
+    _show_cmd: i32,
+) -> i32 {
+    entry()
 }
